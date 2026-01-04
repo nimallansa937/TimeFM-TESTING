@@ -5,321 +5,271 @@ def create_notebook():
     notebook = {
         "cells": [],
         "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3",
-                "language": "python",
-                "name": "python3"
-            },
-            "language_info": {
-                "codemirror_mode": {
-                    "name": "ipython",
-                    "version": 3
-                },
-                "file_extension": ".py",
-                "mimetype": "text/x-python",
-                "name": "python",
-                "nbconvert_exporter": "python",
-                "pygments_lexer": "ipython3",
-                "version": "3.10.12"
-            },
+            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            "language_info": {"name": "python", "version": "3.12.0"},
             "accelerator": "GPU"
         },
         "nbformat": 4,
         "nbformat_minor": 5
     }
 
-    def add_cell(source_code, cell_type="code"):
-        cell = {
-            "cell_type": cell_type,
+    def add_code_cell(source_code):
+        notebook["cells"].append({
+            "cell_type": "code",
             "metadata": {},
-            "source": [line + "\n" for line in source_code.split("\n")]
-        }
-        notebook["cells"].append(cell)
+            "source": [line + "\n" for line in source_code.split("\n")],
+            "outputs": [],
+            "execution_count": None
+        })
 
-    # --- CELL 1: Setup ---
-    add_cell("""# @title 1. Environment Setup & Installation
-# Check for GPU
+    def add_markdown_cell(source_text):
+        notebook["cells"].append({
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [line + "\n" for line in source_text.split("\n")]
+        })
+
+    # --- Instructions ---
+    add_markdown_cell("""# TimesFM Validation - GitHub Install
+## Colab Python 3.12 Compatibility Fix
+Since PyPI versions don't support Python 3.12, we install from GitHub.
+
+1. Run Cell 1 (Installation from GitHub)
+2. **RESTART RUNTIME**: `Runtime` → `Restart session`
+3. Run Cell 2 to verify
+""")
+
+    # --- CELL 1: Installation from GitHub ---
+    add_code_cell("""# @title 1. Install TimesFM from GitHub (Python 3.12 fix)
 !nvidia-smi
+!python --version
 
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+print("=" * 60)
+print("PyPI versions require Python <3.12")
+print("Installing directly from GitHub repository...")
+print("=" * 60)
 
-print("Installing dependencies... (this may take 2-3 minutes)")
-!pip install -q timesfm jax jaxlib==0.4.20+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-!pip install -q yfinance ccxt pandas numpy scikit-learn matplotlib seaborn xgboost
+# Uninstall any broken attempts
+!pip uninstall -y timesfm lingvo paxml praxis 2>/dev/null || true
 
-print("✅ Environment ready!")""")
+# Install from GitHub main branch (may have Python 3.12 fixes)
+print()
+print("Step 1: Installing TimesFM from GitHub...")
+!pip install git+https://github.com/google-research/timesfm.git --no-deps
 
-    # --- CELL 2: Imports ---
-    add_cell("""# @title 2. Core Imports and Configuration
-import jax
+# Install minimal dependencies manually (avoiding lingvo)
+print()
+print("Step 2: Installing minimal dependencies...")
+!pip install jax jaxlib numpy pandas scikit-learn huggingface_hub einshape
+
+# Install other tools
+print()
+print("Step 3: Installing analysis tools...")
+!pip install -q ccxt matplotlib seaborn xgboost
+
+print()
+print("=" * 60)
+print("✅ Installation attempted!")
+print("=" * 60)
+print()
+print("⚠️ RESTART: Runtime → Restart session")
+print("⚠️ Then run Cell 2 to verify")
+print("=" * 60)""")
+
+    # --- CELL 2: Verify ---
+    add_code_cell("""# @title 2. Verify Installation
+print("Checking installation...")
+
+try:
+    import timesfm
+    print(f"✅ timesfm imported!")
+except ImportError as e:
+    print(f"❌ timesfm failed: {e}")
+    print()
+    print("=" * 50)
+    print("ALTERNATIVE: TimesFM does NOT support Python 3.12")
+    print("Your options:")
+    print("1. Use Kaggle notebooks (Python 3.10)")
+    print("2. Use local machine with Python 3.10")
+    print("3. Wait for Google to update TimesFM")
+    print("=" * 50)
+    raise
+
+try:
+    import jax
+    print(f"✅ JAX: {jax.devices()}")
+except:
+    print("⚠️ JAX import issue")
+
+print()
+print("✅ Ready to proceed!")""")
+
+    # --- CELL 3: Config ---
+    add_code_cell("""# @title 3. Configuration
 import timesfm
+import jax
 import ccxt
 import pandas as pd
 import numpy as np
 import xgboost as xgb
 import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.preprocessing import StandardScaler
 from dataclasses import dataclass
-from typing import Tuple, Dict, List
 
-# Basic Config
 @dataclass
 class Config:
     context_length: int = 512
-    forecast_horizon: int = 32
+    forecast_horizon: int = 128
     walkforward_step: int = 128
-    symbol: str = 'BTC/USDT'
+    # Using Kraken (Binance is geo-blocked from Colab)
+    symbol: str = 'BTC/USD'
     timeframe: str = '5m'
-    xgb_lookback: int = 100  # Extra lookback for features
+    model_repo: str = "google/timesfm-1.0-200m"
 
 config = Config()
+print(f"Config: {config.model_repo}")
+print(f"Exchange: Kraken (Binance blocked from Colab)")""")
 
-print(f"JAX Backend: {jax.devices()}")
-if 'cpu' in str(jax.devices()).lower():
-    print("⚠️ WARNING: Running on CPU. This will be slow! Enable GPU in Runtime > Change runtime type.")
-else:
-    print("🚀 GPU Detected. Ready for TimesFM.")""")
+    # --- CELL 4: Data ---
+    add_code_cell("""# @title 4. Load BTC Data from CSV
+# Upload btc_5min_1year.csv to Colab first!
+# (Use the file icon on the left sidebar, or drag & drop)
 
-    # --- CELL 3: Data ---
-    add_cell("""# @title 3. Data Acquisition & Feature Engineering
-def fetch_data(symbol, timeframe, days=365):
-    # 5min bars per day = 12 * 24 = 288
-    # Total bars needed approx = 288 * days
-    limit = 288 * days
-    print(f"Fetching approx {limit} bars for {symbol} (~{days} days)...")
-    
-    exchange = ccxt.binance()
-    since = exchange.milliseconds() - (days * 24 * 60 * 60 * 1000)
-    all_ohlcv = []
-    
-    while True:
-        try:
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=1000)
-            if not ohlcv:
-                break
-            all_ohlcv.extend(ohlcv)
-            since = ohlcv[-1][0] + 1
-            
-            if len(all_ohlcv) >= limit:
-                break
-                
-            if len(all_ohlcv) % 10000 == 0:
-                print(f"Fetched {len(all_ohlcv)} bars...")
-                
-        except Exception as e:
-            print(f"Error fetching: {e}")
-            break
-            
-    df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-    df = df.set_index('timestamp')
-    
-    # Remove duplicates
-    df = df[~df.index.duplicated(keep='first')]
-    return df
+from google.colab import files
+import os
 
-def add_technical_features(df):
-    # RSI
+# Check if file exists, if not prompt upload
+csv_file = 'btc_5min_1year.csv'
+
+if not os.path.exists(csv_file):
+    print("Please upload btc_5min_1year.csv...")
+    uploaded = files.upload()
+    csv_file = list(uploaded.keys())[0]
+
+print(f"Loading {csv_file}...")
+df = pd.read_csv(csv_file, index_col='timestamp', parse_dates=True)
+print(f"✅ Loaded {len(df)} bars")
+print(f"Date range: {df.index[0]} to {df.index[-1]}")
+
+# Add features
+def add_features(df):
     delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['rsi'] = 100 - (100 / (1 + rs))
-    
-    # EMAs
-    df['ema_12'] = df['close'].ewm(span=12, adjust=False).mean()
-    df['ema_26'] = df['close'].ewm(span=26, adjust=False).mean()
-    
-    # Volatility
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    df['rsi'] = 100 - (100 / (1 + gain/loss))
+    df['ema_12'] = df['close'].ewm(span=12).mean()
+    df['ema_26'] = df['close'].ewm(span=26).mean()
     df['volatility'] = df['close'].rolling(20).std()
-    
-    # Returns (Target for XGBoost)
     df['returns'] = df['close'].pct_change()
-    df['target_next_return'] = df['returns'].shift(-1) # Predicting next step
-    
+    df['target'] = df['returns'].shift(-1)
     return df.dropna()
 
-# Fetch 1 Year of Data
-raw_df = fetch_data(config.symbol, config.timeframe, days=365)
-df = add_technical_features(raw_df)
+df = add_features(df)
+print(f"✅ {len(df)} bars with features ready for backtest")""")
 
-print(f"✅ Data processed. Shape: {df.shape}")
-print(f"Range: {df.index[0]} -> {df.index[-1]}")
-df.tail()""")
+    # --- CELL 5: Model ---
+    add_code_cell("""# @title 5. Load Model
+print(f"Loading {config.model_repo}...")
 
-    # --- CELL 4: TimesFM Loading ---
-    add_cell("""# @title 4. Load Models (TimesFM + XGBoost Setup)
+backend = "gpu" if "gpu" in str(jax.devices()).lower() else "cpu"
 
-# 1. Load TimesFM
-print("Loading TimesFM (checking for checkpoint)...")
-# Note: In a real scenario, you might need to download the checkpoint. 
-# For this demo, we assume the library handles it or we use a huggingface hub loader if available.
-# Since the checkpoint logic is specific, we will use the standard instantiation which often pulls from HF if not local.
-try:
-    tfm = timesfm.TimesFM(
-        backend="gpu" if "gpu" in str(jax.devices()) else "cpu",
-        checkpoint=timesfm.TimesFmCheckpoint(huggingface_repo_id="google/timesfm-1.0-200m") # Attempt HF load
-    ) 
-except Exception as e:
-    print(f"Direct HF load failed, trying standard init: {e}")
-    tfm = timesfm.TimesFM(backend="gpu" if "gpu" in str(jax.devices()) else "cpu")
-    # tfm.load_from_checkpoint("timesfm.ckpt") # Uncomment if you have a local file
+tfm = timesfm.TimesFm(
+    hparams=timesfm.TimesFmHparams(
+        backend=backend,
+        per_core_batch_size=32,
+        horizon_len=config.forecast_horizon,
+    ),
+    checkpoint=timesfm.TimesFmCheckpoint(
+        huggingface_repo_id=config.model_repo
+    )
+)
+print(f"✅ Loaded on {backend}")
 
-print("✅ TimesFM Loaded")
-
-# 2. XGBoost Helper
-def train_xgboost(train_df):
-    features = ['rsi', 'ema_12', 'ema_26', 'volatility', 'volume']
-    X = train_df[features]
-    y = train_df['target_next_return']
-    
-    model = xgb.XGBRegressor(n_estimators=100, learning_rate=0.05, max_depth=5)
+def train_xgb(train_df):
+    X = train_df[['rsi', 'ema_12', 'ema_26', 'volatility', 'volume']]
+    y = train_df['target']
+    model = xgb.XGBRegressor(n_estimators=100, learning_rate=0.05, max_depth=5, n_jobs=-1, verbosity=0)
     model.fit(X, y)
     return model
 
-print("✅ XGBoost Helper Ready")""")
+print("✅ Ready")""")
 
-    # --- CELL 5: Validation ---
-    add_cell("""# @title 5. Enhanced Walk-Forward Validation
-# We will simulate a "Hybrid" Trader:
-# 1. TimesFM predicts the trend (Context -> Forecast)
-# 2. XGBoost predicts the immediate return magnitude based on technicals
-# 3. They vote.
-
+    # --- CELL 6: Backtest ---
+    add_code_cell("""# @title 6. Backtest
 results = []
-test_start_idx = len(df) - 2000 # Test on last 2000 bars
-step_size = config.walkforward_step
+test_start = len(df) - 2000
 
-print(f"Starting validation on {len(df)-test_start_idx} bars...")
+print("Backtesting...")
 
-for i in range(test_start_idx, len(df) - config.forecast_horizon, step_size):
-    # Data Slice
-    current_idx = i
-    
-    # 1. TimesFM Forecast
-    # It takes raw values.
-    context_values = df['close'].iloc[i-config.context_length : i].values
-    # Reshape for batch size 1
-    # Note: TimesFM API varies slightly by version, ensure input is [B, T]
+for i in range(test_start, len(df) - config.forecast_horizon, config.walkforward_step):
+    ctx = df['close'].iloc[i-config.context_length:i].values.astype(np.float32)
     try:
-        # Forecast returns (B, Horizon)
-        tfm_forecast, _ = tfm.forecast(context_values[None, :], freq=0, horizon=config.forecast_horizon)
-        tfm_trend = np.mean(np.diff(tfm_forecast[0])) # Simple slope
+        fc, _ = tfm.forecast([ctx], freq=[0])
+        tfm_trend = np.mean(np.diff(fc[0]))
     except:
-        tfm_trend = 0 # Fallback
+        tfm_trend = 0
     
-    # 2. XGBoost Forecast
-    # Train heavily on past data (rolling window would be better but slower)
-    # We retrain every X steps or just once? Let's retrain once for speed here, or strictly past data.
-    # To be "honest", we should only train on df[:i]
-    train_split = df.iloc[:i]
-    xgb_model = train_xgboost(train_split)
+    xgb_model = train_xgb(df.iloc[:i])
+    xgb_pred = xgb_model.predict(df.iloc[i:i+1][['rsi', 'ema_12', 'ema_26', 'volatility', 'volume']])[0]
     
-    # Predict next step
-    current_features = df.iloc[i:i+1][['rsi', 'ema_12', 'ema_26', 'volatility', 'volume']]
-    xgb_pred = xgb_model.predict(current_features)[0]
-    
-    # 3. Ensemble Signal
-    # - If TimesFM sees UP trend AND XGBoost predicts POSITIVE return -> BUY
-    # - If TimesFM sees DOWN trend AND XGBoost predicts NEGATIVE return -> SELL
-    
-    signal = 0
     if tfm_trend > 0 and xgb_pred > 0:
-        signal = 1
+        sig = 1
     elif tfm_trend < 0 and xgb_pred < 0:
-        signal = -1
-        
-    # Calculate Real Result (Next Horizon Return)
-    # Simplified: Did price go up/down over horizon?
-    entry_price = df['close'].iloc[i]
-    exit_price = df['close'].iloc[i + config.forecast_horizon]
-    obs_return = (exit_price - entry_price) / entry_price
+        sig = -1
+    else:
+        sig = 0
     
-    metrics = {
-        'idx': i,
-        'signal': signal,
-        'tfm_trend': tfm_trend,
-        'xgb_pred': xgb_pred,
-        'real_return': obs_return,
-        'strategy_return': signal * obs_return
-    }
-    results.append(metrics)
+    ret = (df['close'].iloc[i + config.forecast_horizon] - df['close'].iloc[i]) / df['close'].iloc[i]
+    results.append({'signal': sig, 'real_return': ret, 'strategy_return': sig * ret})
     
     if len(results) % 5 == 0:
-        print(f"Step {len(results)}: Signal {signal}, Return {obs_return:.4f}")
+        print(f"Step {len(results)}: {sig}, {ret:.4f}")
 
 res_df = pd.DataFrame(results)
-print("✅ Validation Complete")""")
+print("✅ Done")""")
 
-    # --- CELL 6: Analysis ---
-    add_cell("""# @title 6. Performance Report & Portfolio Simulation
+    # --- CELL 7: Results ---
+    add_code_cell("""# @title 7. Results - $1000 CAD
+CAPITAL = 1000.0
+FEE = 0.001
 
-INITIAL_CAPITAL = 1000.0 # CAD
-cost_per_trade = 0.001 # 0.1% fee assumption (optional, set to 0 to ignore)
+res_df['equity'] = (1 + res_df['strategy_return'] - abs(res_df['signal'])*FEE).cumprod() * CAPITAL
+res_df['benchmark'] = (1 + res_df['real_return']).cumprod() * CAPITAL
+res_df['peak'] = res_df['equity'].cummax()
+res_df['dd'] = res_df['equity'] / res_df['peak'] - 1
 
-# calculate equity curve with compounding
-res_df['equity_curve'] = (1 + res_df['strategy_return'] - (abs(res_df['signal']) * cost_per_trade)).cumprod() * INITIAL_CAPITAL
-res_df['benchmark_curve'] = (1 + res_df['real_return']).cumprod() * INITIAL_CAPITAL
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+ax1.plot(res_df['equity'], label='Strategy', color='green')
+ax1.plot(res_df['benchmark'], label='BTC', linestyle='--', alpha=0.7)
+ax1.set_title(f'Portfolio (${CAPITAL} CAD)')
+ax1.legend()
+ax1.grid(True)
 
-# Drawdown Calculation
-res_df['peak'] = res_df['equity_curve'].cummax()
-res_df['drawdown'] = res_df['equity_curve'] / res_df['peak'] - 1.0
-max_drawdown = res_df['drawdown'].min()
-
-# Visualization
-plt.figure(figsize=(12, 8))
-plt.subplot(2, 1, 1)
-plt.plot(res_df['equity_curve'], label='Strategy Equity (CAD)', color='green')
-plt.plot(res_df['benchmark_curve'], label='Buy & Hold Benchmark', alpha=0.5, linestyle='--')
-plt.title(f'Portfolio Simulation (Start: ${INITIAL_CAPITAL})')
-plt.ylabel('Value (CAD)')
-plt.legend()
-plt.grid(True)
-
-plt.subplot(2, 1, 2)
-plt.plot(res_df['drawdown'], label='Drawdown', color='red')
-plt.fill_between(res_df.index, res_df['drawdown'], 0, color='red', alpha=0.1)
-plt.title('Strategy Drawdown')
-plt.ylabel('% Drawdown')
-plt.grid(True)
-
+ax2.fill_between(range(len(res_df)), res_df['dd'], 0, color='red', alpha=0.3)
+ax2.set_title('Drawdown')
+ax2.grid(True)
 plt.tight_layout()
 plt.show()
 
-# Final Metrics
-final_balance = res_df['equity_curve'].iloc[-1]
-net_pnl = final_balance - INITIAL_CAPITAL
-total_return = net_pnl / INITIAL_CAPITAL
-win_rate = (res_df['strategy_return'] > 0).mean()
+final = res_df['equity'].iloc[-1]
+pnl = final - CAPITAL
+wr = (res_df['strategy_return'] > 0).mean()
+trades = res_df[res_df['signal'] != 0]['strategy_return']
+sharpe = trades.mean() / trades.std() * np.sqrt(len(res_df)) if len(trades) > 0 else 0
 
-# Annualized Sharpe (assuming 5min frequency)
-# Steps per year approx 105120. If we trade every walkforward step (e.g. 128), logic adjusts.
-# Here we calculate based on the realized series of trades.
-valid_trades = res_df[res_df['signal'] != 0]['strategy_return']
-if len(valid_trades) > 0:
-    sharpe = valid_trades.mean() / valid_trades.std() * np.sqrt(len(res_df)) # simplified annualization
-else:
-    sharpe = 0
-
-print("-" * 40)
-print(f"INITIAL CAPITAL:  ${INITIAL_CAPITAL:,.2f} CAD")
-print(f"FINAL BALANCE:    ${final_balance:,.2f} CAD")
-print(f"NET PnL:          ${net_pnl:,.2f} CAD")
-print("-" * 40)
-print(f"Total Return:     {total_return:.2%}")
-print(f"Max Drawdown:     {max_drawdown:.2%}")
-print(f"Win Rate:         {win_rate:.1%}")
-print(f"Sharpe Ratio:     {sharpe:.3f}")
-print("-" * 40)
-""")
+print("=" * 40)
+print(f"INITIAL:      ${CAPITAL:,.2f} CAD")
+print(f"FINAL:        ${final:,.2f} CAD")
+print(f"NET PnL:      ${pnl:,.2f} CAD")
+print("=" * 40)
+print(f"Max Drawdown: {res_df['dd'].min():.2%}")
+print(f"Win Rate:     {wr:.1%}")
+print(f"Sharpe:       {sharpe:.3f}")
+print("=" * 40)""")
 
     output_path = os.path.join(r"c:\Users\chari\OneDrive\Documents\Time FN MODEL", "timesfm_enhanced_validation.ipynb")
     with open(output_path, "w") as f:
         json.dump(notebook, f, indent=2)
-    
-    print(f"Notebook created at: {output_path}")
+    print(f"Notebook created: {output_path}")
 
 if __name__ == "__main__":
     create_notebook()
